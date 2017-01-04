@@ -153,7 +153,7 @@ class AmoAPI
 
 	public function current() 
 	{
-		return ($this->currentCache ? : $this->currentCache = $this->request('GET', 'v2/json/accounts/current')->account);
+		return ($this->currentCache ? $this->currentCache : $this->currentCache = $this->request('GET', 'v2/json/accounts/current')->account);
 	}
 	
 	public function printCurrentCache()
@@ -456,7 +456,8 @@ class AmoAPI
 			{
 				if ($field->code == 'EMAIL' and $isNewEmail)
 				{
-					$values = $this->processContactFields(array('EMAIL' => $contactData['EMAIL']))[0]['values'];
+					$values = $this->processContactFields(array('EMAIL' => $contactData['EMAIL']));//[0]['values'];
+					$values = $values[0]['values'];
 					foreach ($values as $value) 
 					{
 						$value['enum'] = self::WORK_EMAIL_ID;
@@ -465,7 +466,8 @@ class AmoAPI
 				}
 				if ($field->code == 'PHONE' and $isNewPhone)
 				{
-					$values = $this->processContactFields(array('PHONE' => $contactData['PHONE']))[0]['values'];
+					$values = $this->processContactFields(array('PHONE' => $contactData['PHONE']));//[0]['values'];
+					$values = $values[0]['values'];
 					foreach ($values as $value) 
 					{
 						$value['enum'] = self::WORK_PHONE_ID;
