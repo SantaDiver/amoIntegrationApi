@@ -250,6 +250,7 @@ class AmoAPI
 		return $this->contactFieldCache;
 	}
 	
+	
 	public function getContactField($fieldName) 
 	{
 		$fields = $this->getContactFields();
@@ -289,8 +290,8 @@ class AmoAPI
 
 	public function getLeadFields() 
 	{
-		if(empty($this->contactFieldCache)) $this->cacheFields();
-		return $this->contactFieldCache;
+		if(empty($this->leadFieldCache)) $this->cacheFields();
+		return $this->leadFieldCache;
 	}
 	
 	public function getLeadField($fieldName)
@@ -305,7 +306,7 @@ class AmoAPI
 		foreach($leadData as $code => $value) {
 			if(empty($value)) throw new AmoException(-2);
 			$field = $this->getLeadField($code);
-			if(is_null($field)) continue;
+			if(is_null($field)){echo ($field); continue;}
 
 			if(!is_array($value)) { $value = array($value); }
 			if($field->multiple === 'N' && count($value) > 1) throw new AmoException(-4);
@@ -381,7 +382,7 @@ class AmoAPI
 		if(!isset($response->tasks->add[0]->id)) throw new AmoException(-8);
 	}
 
-	public function processData($leadData, $contactData, $leadTags) {
+	public function processData($leadData, $contactData, $leadTags, $respUserSend) {
 		if(empty($contactData)) throw new AmoException(AmoException::DATA_EMPTY);
 		if(empty($contactData['EMAIL']) and empty($contactData['PHONE'])) throw new AmoException(AmoException::DATA_EMPTY_EMAIL);
 		if(empty($leadData['NAME'])) throw new AmoException(-5);
@@ -511,7 +512,19 @@ class AmoAPI
 		else
 		{
 			// Responsible user
-			$responsibleUser = $this->rotateUser();
+			if ($respUserSend == -1)
+			{
+				$responsibleUser = $this->rotateUser();
+			}
+			else
+			{
+				$responsibleUser = $respUserSend;
+			}
+			
+			// $results = print_r($this->processLeadFields($leadData), true);
+			// file_put_contents(dirname(__FILE__).'/past.txt', $results);
+			
+			// return 0;
 	
 			// Leads Request
 			$leadId = $this->leadRequest($responsibleUser->id, $leadData['NAME'], 1, 1, $this->processLeadFields($leadData), $leadTags);
@@ -519,12 +532,9 @@ class AmoAPI
 			// Contacts Request
 			$contactId = $this->contactRequest($responsibleUser->id, (empty($contactData['NAME']) ? 'Untitled' : $contactData['NAME']),
 				$this->processContactFields($contactData), array($leadId));
-				
-			$res = print_r($this->processContactFields($contactData), true);
-			file_put_contents(dirname(__FILE__).'/past.txt', $res);
 		}
 
-		return true;
+		return $leadId;
 	}
 	
 	
