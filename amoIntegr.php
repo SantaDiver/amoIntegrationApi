@@ -306,7 +306,7 @@ class AmoAPI
 		foreach($leadData as $code => $value) {
 			if(empty($value)) throw new AmoException(-2);
 			$field = $this->getLeadField($code);
-			if(is_null($field)){echo ($field); continue;}
+			if(is_null($field)){continue;}
 
 			if(!is_array($value)) { $value = array($value); }
 			if($field->multiple === 'N' && count($value) > 1) throw new AmoException(-4);
@@ -520,11 +520,6 @@ class AmoAPI
 			{
 				$responsibleUser = $respUserSend;
 			}
-			
-			// $results = print_r($this->processLeadFields($leadData), true);
-			// file_put_contents(dirname(__FILE__).'/past.txt', $results);
-			
-			// return 0;
 	
 			// Leads Request
 			$leadId = $this->leadRequest($responsibleUser->id, $leadData['NAME'], 1, 1, $this->processLeadFields($leadData), $leadTags);
