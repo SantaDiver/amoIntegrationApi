@@ -337,8 +337,8 @@ class AmoAPI
 		{
 			if(empty($value)) throw new AmoException(-2);
 
-			if ($typeOfData == LEAD_DATA_TYPE) $field = $this->getLeadField($code);
-			elseif ($typeOfData == CONTACT_DATA_TYPE) $field = $this->getContactField($code);
+			if ($typeOfData == self::LEAD_DATA_TYPE) $field = $this->getLeadField($code);
+			elseif ($typeOfData == self::CONTACT_DATA_TYPE) $field = $this->getContactField($code);
 			else throw new AmoException(-11);
 
 			if(is_null($field)) continue;
@@ -505,7 +505,7 @@ class AmoAPI
 			{
 				if ($field->code == 'EMAIL' and $isNewEmail)
 				{
-					$values = $this->processFields(array('EMAIL' => $contactData['EMAIL']), CONTACT_DATA_TYPE);//[0]['values'];
+					$values = $this->processFields(array('EMAIL' => $contactData['EMAIL']), self::CONTACT_DATA_TYPE);//[0]['values'];
 					$values = $values[0]['values'];
 					foreach ($values as $value) 
 					{
@@ -515,7 +515,7 @@ class AmoAPI
 				}
 				if ($field->code == 'PHONE' and $isNewPhone)
 				{
-					$values = $this->processFields(array('PHONE' => $contactData['PHONE']), CONTACT_DATA_TYPE);//[0]['values'];
+					$values = $this->processFields(array('PHONE' => $contactData['PHONE']), self::CONTACT_DATA_TYPE);//[0]['values'];
 					$values = $values[0]['values'];
 					foreach ($values as $value) 
 					{
@@ -551,7 +551,7 @@ class AmoAPI
 			if($leadId == -1)
 			{
 				$leadId = $this->leadRequest($responsibleUserID, $leadData['NAME'], $this->rep_status, 
-					$this->rep_pipeline, $this->processFields($leadData, LEAD_DATA_TYPE), $leadTags);
+					$this->rep_pipeline, $this->processFields($leadData, self::LEAD_DATA_TYPE), $leadTags);
 				
 				$linkedLeads[] = $leadId;
 				$contact = array('linked_leads_id' => $linkedLeads, 'id' => $intersectId, 'last_modified' => time());
@@ -586,11 +586,11 @@ class AmoAPI
 	
 			// Leads Request
 			$leadId = $this->leadRequest($responsibleUserID, $leadData['NAME'], $this->main_status, $this->main_pipeline, 
-				$this->processFields($leadData, LEAD_DATA_TYPE), $leadTags);
+				$this->processFields($leadData, self::LEAD_DATA_TYPE), $leadTags);
 	
 			// Contacts Request
 			$contactId = $this->contactRequest($responsibleUserID, (empty($contactData['NAME']) ? 'Untitled' : $contactData['NAME']),
-				$this->processFields($contactData, CONTACT_DATA_TYPE), array($leadId));
+				$this->processFields($contactData, self::CONTACT_DATA_TYPE), array($leadId));
 		}
 
 		// We will return lead Id in any case
