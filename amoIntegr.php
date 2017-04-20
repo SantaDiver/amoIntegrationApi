@@ -52,8 +52,8 @@ class AmoAPI
 	private $rep_status = 14107147;
 	private $departmentID = 0;
 
-	const WORK_PHONE_ID = 511709;
-	const WORK_EMAIL_ID = 511721;
+	const WORK_PHONE_ID = 15030;
+	const WORK_EMAIL_ID = 15042;
 
 	const FILE_TO_ROTATE = '/last.txt';
 	const LEAD_DATA_TYPE = 0;
@@ -485,10 +485,16 @@ class AmoAPI
 			}
 			if (empty($contactData['EMAIL'])) $isNewEmail = false;
 			if (empty($contactData['PHONE'])) $isNewPhone = false;
+			
 			// Here we add email and phone to contact data
 			// If it's needed
+			$noEmailInContact = true;
+			$noPhoneInContact = true;
 			foreach ($cacheContactData as $field)
 			{
+				if ($field->code == 'EMAIL') $noEmailInContact = false;
+				if ($field->code == 'PHONE') $noPhoneInContact = false;
+				
 				if ($field->code == 'EMAIL' and $isNewEmail)
 				{
 					$values = $this->processFields(array('EMAIL' => $contactData['EMAIL']), self::CONTACT_DATA_TYPE);//[0]['values'];
@@ -509,6 +515,26 @@ class AmoAPI
 						$field->values[] = (object)$value;
 					}
 				}
+			}
+			
+			if ($noEmailInContact)
+			{
+				$values = $this->processFields(array('EMAIL' => $contactData['EMAIL']), self::CONTACT_DATA_TYPE);//[0]['values'];
+				$values[0]['values'][0]['enum'] = self::WORK_EMAIL_ID;
+				$values = (object)$values[0];
+				$values->name = 'Email';
+				$values->code = 'EMAIL';
+				$cacheContactData[] = $values;
+			}
+			
+			if ($noPhoneInContact)
+			{
+				$values = $this->processFields(array('PHONE' => $contactData['PHONE']), self::CONTACT_DATA_TYPE);//[0]['values'];
+				$values[0]['values'][0]['enum'] = self::WORK_PHONE_ID;
+				$values = (object)$values[0];
+				$values->name = 'Телефон';
+				$values->code = 'PHONE';
+				$cacheContactData[] = $values;
 			}
 
 			// Update Contact using our new data
