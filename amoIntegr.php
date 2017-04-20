@@ -1,5 +1,11 @@
 <?php
 //require_once dirname(__FILE__) . '/RestClient.class.php';
+function compareUsers($user1, $user2)
+{
+	if ($user1->id > $user2->id) return 1;
+	elseif ($user1->id == $user2->id) return 0;
+	else return -1;
+}
 class AmoException extends Exception
 {
 	const UNKNOWN = 0;
@@ -26,7 +32,7 @@ class AmoException extends Exception
 			case self::AUTH_INVALID: $message = 'Username or password invalid'; break;
 			default: $message = 'Unknown error ('.$code.')';
 		}
-		parent::__construct($message, $code, $previous);
+		parent::__construct($message, $code);
 	}
 }
 class AmoAPI
@@ -37,45 +43,52 @@ class AmoAPI
 	private $currentCache;
 	private $contactFieldCache;
 	private $leadFieldCache;
-	
+
 	private $generateTaskForRec;
-	
-	const REP_PIPELINE = 234889;
-	const REP_STATUS = 11572309;
-	
-	const WORK_EMAIL_ID = 15042;
-	const WORK_PHONE_ID = 15030;
-	
+
+	private $main_pipeline = 504604;
+	private $main_status = 14093680;
+	private $rep_pipeline = 504622;
+	private $rep_status = 14107147;
+	private $departmentID = 0;
+
+	const WORK_PHONE_ID = 511709;
+	const WORK_EMAIL_ID = 511721;
+
+	const FILE_TO_ROTATE = '/last.txt';
+	const LEAD_DATA_TYPE = 0;
+	const CONTACT_DATA_TYPE = 1;
+
 	public function __construct($subdomain, $user, $hash) {
 		$this->subdomain = $subdomain;
 		$this->user = $user;
 		$this->hash = $hash;
-		
+
 		$this->generateTaskForRec = true;
 	}
-	public function request($method, $request, $parameters = array(), $isPublicApi = false) 
+	public function request($method, $request, $parameters = array(), $isPublicApi = false)
 	{
 		if(empty($this->subdomain)) throw new AmoException(AmoException::SUBDOMAIN_NOT_SET);
 		$url = 'https://' . $this->subdomain . '.amocrm.ru/';
-		if($isPublicApi) 
+		if($isPublicApi)
 		{
 			if(empty($this->user)) throw new Exception(AmoException::USER_NOT_SET);
 			if(empty($this->hash)) throw new Exception(AmoException::HASH_NOT_SET);
 			$url .= 'api/' . $request . '?login=' . $this->user . '&api_key=' . $this->hash;
-		} else 
+		} else
 		{
-			$url .= 'private/api/' . $request . '?type=json';
+			$url .= 'private/api/' . $request;// . '?type=json';
 		}
-		if($method === 'GET') 
+		if($method === 'GET')
 		{
-			$url .= '&'.http_build_query($parameters);
+			$url .= '?'.http_build_query($parameters);
 		}
 		$curl=curl_init();
 		curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
 		curl_setopt($curl,CURLOPT_USERAGENT,'amoCRM-API-client/1.0');
 		curl_setopt($curl,CURLOPT_URL,$url);
 		curl_setopt($curl,CURLOPT_CUSTOMREQUEST,$method);
-		if($method === 'POST') 
+		if($method === 'POST')
 		{
 			curl_setopt($curl,CURLOPT_POSTFIELDS,json_encode($parameters));
 		}
@@ -88,49 +101,49 @@ class AmoAPI
 		curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
 		$out = curl_exec($curl);
 		$code = curl_getinfo($curl,CURLINFO_HTTP_CODE);
-		if(($code === 401 || $code === 403) && self::auth()) 
+		if(($code === 401 || $code === 403) && self::auth())
 		{
-			if($this->auth()) 
+			if($this->auth())
 			{
 				$out = curl_exec($curl);
 				$code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
 			}
 		}
-		if($code === 200 || $code === 204) 
+		if($code === 200 || $code === 204)
 		{
-			if(is_null($response = json_decode($out))) 
+			if(is_null($response = json_decode($out)))
 			{
 				return null;
-			} else 
+			} else
 			{
 				return $response->response;
 			}
-		} else 
-		{ 
-			return $code; 
+		} else
+		{
+			return $code;
 		}
 	}
-	public function auth() 
+	public function auth()
 	{
 		if(empty($this->user)) throw new AmoException(AmoException::USER_NOT_SET);
 		if(empty($this->hash)) throw new AmoException(AmoException::HASH_NOT_SET);
-		$response = $this->request('POST', 'auth.php', array(
+		$response = $this->request('POST', 'auth.php?type=json', array(
 			'USER_LOGIN' => $this->user,
 			'USER_HASH' => $this->hash,
 			'type' => 'json'
 			));
-		if(!is_int($response)) 
+		if(!is_int($response))
 		{
-			if($response->auth === false) 
+			if($response->auth === false)
 			{
 				throw new AmoException(AmoException::AUTH_INVALID);
-			} else 
+			} else
 			{
 				return true;
 			}
-		} else 
+		} else
 		{
-			switch ($response) 
+			switch ($response)
 			{
 			case 404: throw new AmoException(AmoException::REQUEST_NOT_FOUND); break;
 			case 401: throw new AmoException(AmoException::AUTH_INVALID); break;
@@ -138,80 +151,133 @@ class AmoAPI
 			}
 		}
 	}
-	public function current() 
+	public function current()
 	{
 		return ($this->currentCache ? $this->currentCache : $this->currentCache = $this->request('GET', 'v2/json/accounts/current')->account);
 	}
-	
+
 	public function printCurrentCache()
 	{
 		$results = print_r($this->current(), true);
 		file_put_contents(dirname(__FILE__).'/past.txt', $results);
 	}
-	
-	public function getLeadUsers() 
+
+	public function getLeadUsers()
 	{
 		$users = $this->current()->users;
 		$userIds = array();
-		foreach ($users as $key => $user) 
+		foreach ($users as $key => $user)
 		{
-			if($user->rights_lead_view === 'M' || $user->rights_lead_view === 'A') 
+			if($user->rights_lead_view === 'M' || $user->rights_lead_view === 'A'
+				|| $user->rights_lead_view === 'G')
 			{
-				// if ($user->login <> 'info@fabrika-tt.ru') {
+				if ($this->departmentID < 0 || $user->group_id == $this->departmentID)
+				{
 					$userIds[$user->id] = $user;
-				// }
+				}
 			}
 		}
 		return $userIds;
 	}
-	
-	public function getLeadUser($userId) 
+
+	public function getLeadUser($userId)
 	{
 		$users = $this->getLeadUsers();
 		return (empty($users[$userId]) ? null : $users[$userId]);
 	}
-	
-	public function rotateUser() 
+
+	public function rotateUser()
 	{
-		if(file_exists(dirname(__FILE__) . '/last.txt')) 
+		if(!file_exists(dirname(__FILE__) . self::FILE_TO_ROTATE))
 		{
-			$user = file_get_contents(dirname(__FILE__) . '/last.txt');
-			$user = $this->getLeadUser($user);
+		    file_put_contents(dirname(__FILE__).self::FILE_TO_ROTATE, json_encode(array()));
 		}
+
+		$lastInGroup = file_get_contents(dirname(__FILE__) . self::FILE_TO_ROTATE);
+		$lastInGroup = json_decode($lastInGroup, true);
+
+		if( !isset($lastInGroup[-1]) )
+		{
+		    $lastInGroup[-1] = -1;
+		}
+		if( !isset($lastInGroup[0]) )
+		{
+		    $lastInGroup[0] = -1;
+		}
+
+		$groups = $this->current()->groups;
+		foreach ($groups as $group)
+		{
+		    if ( !isset($lastInGroup[$group->id]) )
+		    {
+		        $lastInGroup[$group->id] = -1;
+		    }
+		}
+
+		if ($this->departmentID >= 0)
+		{
+			if (!isset($lastInGroup[$this->departmentID]))
+			{
+				throw new AmoException(-3);
+			}
+			$user = $lastInGroup[$this->departmentID];
+		}
+		else
+		{
+		    $user = $lastInGroup[-1];
+		}
+
+		$user = $this->getLeadUser($user);
 		$users = $this->getLeadUsers();
-		if(empty($user)) 
+		usort($users, "compareUsers");
+
+		if(empty($user))
 		{
 			$user = array_shift($users);
-		} else 
+		}
+		else
 		{
 			$found = false;
-			foreach($users as $id => $select_user) 
+			foreach($users as $u)
 			{
-				if($found === true) 
+				if($found === true)
 				{
-					$user = $select_user;
+					$user = $u;
 					$found = false;
 					break;
 				}
-				if($id == $user->id) 
-				{ 
+				if($u->id == $user->id)
+				{
 					$found = true;
 				}
 			}
-			if($found === true) 
+			if($found === true)
 			{
 				$user = array_shift($users);
 			}
 		}
-		// file_put_contents(dirname(__FILE__).'/last.txt', $user->id);
-		// return $user;
+
+		if ($this->departmentID >= 0)
+		{
+			$lastInGroup[$this->departmentID] = $user->id;
+		}
+		else
+		{
+			$lastInGroup[-1] = $user->id;
+		}
+
+		$lastInGroup = json_encode($lastInGroup, true);
+		file_put_contents(dirname(__FILE__).self::FILE_TO_ROTATE, $lastInGroup);
+
+		return $user;
 	}
-	public function cacheFields() 
+
+	public function cacheFields()
 	{
 		$this->contactFieldCache = array();
-		foreach($this->current()->custom_fields->contacts as $field) 
+		foreach($this->current()->custom_fields->contacts as $field)
 		{
-			if(!empty($field->code)) 
+			if(!empty($field->code))
 			{
 				$this->contactFieldCache[$field->code] = $field;
 			}
@@ -219,9 +285,9 @@ class AmoAPI
 			$this->contactFieldCache[$field->id] = $field;
 		}
 		$this->leadFieldCache = array();
-		foreach($this->current()->custom_fields->leads as $field) 
+		foreach($this->current()->custom_fields->leads as $field)
 		{
-			if(!empty($field->code)) 
+			if(!empty($field->code))
 			{
 				$this->leadFieldCache[$field->code] = $field;
 			}
@@ -229,75 +295,54 @@ class AmoAPI
 			$this->leadFieldCache[$field->id] = $field;
 		}
 	}
-	
-	public function getContactFields() 
+
+	public function getContactFields()
 	{
 		if(empty($this->contactFieldCache)) $this->cacheFields();
 		return $this->contactFieldCache;
 	}
-	
-	
-	public function getContactField($fieldName) 
+
+
+	public function getContactField($fieldName)
 	{
 		$fields = $this->getContactFields();
 		return (empty($fields[$fieldName]) ? null : $fields[$fieldName]);
 	}
-	
-	public function processContactFields($contactData) 
-	{
-		$cfields = array();
-		foreach($contactData as $code => $value) {
-			if(empty($value)) throw new AmoException(-2);
-			$field = $this->getContactField($code);
-			if(is_null($field)) continue;
-			if(!is_array($value)) 
-			{ 
-				$value = array($value); 
-			}
-			if($field->multiple === 'N' && count($value) > 1) throw new AmoException(-4);
-			$cf = array('id' => $field->id,'values' => array());
-			foreach($value as $enum => $subvalue) 
-			{
-				if(is_string($enum)) 
-				{
-					$cf['values'][] = array('value' => $subvalue, 'enum' => $enum);
-				} else 
-				{
-					$cf['values'][] = array('value' => $subvalue);
-				}
-			}
-			$cfields[] = $cf;
-		}
-		return $cfields;
-	}
-	public function getLeadFields() 
+
+	public function getLeadFields()
 	{
 		if(empty($this->leadFieldCache)) $this->cacheFields();
 		return $this->leadFieldCache;
 	}
-	
+
 	public function getLeadField($fieldName)
 	{
 		$fields = $this->getLeadFields();
 		return (empty($fields[$fieldName]) ? null : $fields[$fieldName]);
 	}
-	
-	public function processLeadFields($leadData)
+
+	public function processFields($data, $typeOfData)
 	{
 		$cfields = array();
-		foreach($leadData as $code => $value) {
+		foreach($data as $code => $value)
+		{
 			if(empty($value)) throw new AmoException(-2);
-			$field = $this->getLeadField($code);
-			if(is_null($field)){continue;}
-			if(!is_array($value)) { $value = array($value); }
+			if ($typeOfData == self::LEAD_DATA_TYPE) $field = $this->getLeadField($code);
+			elseif ($typeOfData == self::CONTACT_DATA_TYPE) $field = $this->getContactField($code);
+			else throw new AmoException(-11);
+			if(is_null($field)) continue;
+			if(!is_array($value))
+			{
+				$value = array($value);
+			}
 			if($field->multiple === 'N' && count($value) > 1) throw new AmoException(-4);
 			$cf = array('id' => $field->id,'values' => array());
 			foreach($value as $enum => $subvalue)
 			{
-				if(is_string($enum)) 
+				if(is_string($enum))
 				{
 					$cf['values'][] = array('value' => $subvalue, 'enum' => $enum);
-				} else 
+				} else
 				{
 					$cf['values'][] = array('value' => $subvalue);
 				}
@@ -306,10 +351,9 @@ class AmoAPI
 		}
 		return $cfields;
 	}
-	
-	public function leadRequest($respUserID, $name, $status, $pipelineID, $customFields, $tags) 
+	public function leadRequest($respUserID, $name, $status, $pipelineID, $customFields, $tags)
 	{
-	    
+
 		// Leads Request
 		$lead = array(
 			'responsible_user_id' => $respUserID,
@@ -328,8 +372,8 @@ class AmoAPI
 		if(!isset($response->leads->add[0]->id)) throw new AmoException(-8);
 		return $response->leads->add[0]->id;
 	}
-	
-	public function contactRequest($respUserID, $name, $customFields, $linkedLeads) 
+
+	public function contactRequest($respUserID, $name, $customFields, $linkedLeads)
 	{
 		// Contacts Request
 		$contact_fields = $this->getContactFields();
@@ -344,8 +388,8 @@ class AmoAPI
 		if(!isset($response->contacts->add[0]->id)) throw new AmoException(-8);
 		return $contactId = $response->contacts->add[0]->id;
 	}
-	
-	public function generateTask($respUserID, $leadId, $elemType, $taskType, $text, $completeTill) 
+
+	public function generateTask($respUserID, $leadId, $elemType, $taskType, $text, $completeTill)
 	{
 		// Task generation
 		$task = array(
@@ -361,17 +405,22 @@ class AmoAPI
 		if(!isset($response->tasks->add[0]->id)) throw new AmoException(-8);
 	}
 	public function processData($leadData, $contactData, $leadTags, $respUserSend) {
+		//  Exception if bad data was send
 		if(empty($contactData)) throw new AmoException(AmoException::DATA_EMPTY);
 		if(empty($contactData['EMAIL']) and empty($contactData['PHONE'])) throw new AmoException(AmoException::DATA_EMPTY_EMAIL);
 		if(empty($leadData['NAME'])) throw new AmoException(-5);
+
 		// Double Prevention
+		// Trying to find contact with same phone
+		// If succes, we will save it's ID, responsible user, contact data and linked leads
 		$phoneIds = array();
 		if (!empty($contactData['PHONE']))
 		{
-			foreach((is_array($contactData['PHONE']) ? $contactData['PHONE'] : array($contactData['PHONE'])) as $phone) 
+			foreach((is_array($contactData['PHONE']) ? $contactData['PHONE'] : array($contactData['PHONE'])) as $phone)
 			{
+				if (ctype_space($phone) || empty($phone)) continue;
 				$response = $this->request('GET', 'v2/json/contacts/list', array('query' => $phone, 'limit_rows' => 1));
-				if(!empty($response->contacts[0])) 
+				if(!empty($response->contacts[0]))
 				{
 					$phoneIds[] = $response->contacts[0]->id;
 					$responsibleUserID = $response->contacts[0]->responsible_user_id;
@@ -381,14 +430,16 @@ class AmoAPI
 				}
 			}
 		}
-		
+
+		// Same thing with email
 		$emailIds = array();
 		if (!empty($contactData['EMAIL']) && empty($phoneIds))
 		{
-			foreach((is_array($contactData['EMAIL']) ? $contactData['EMAIL'] : array($contactData['EMAIL'])) as $email) 
+			foreach((is_array($contactData['EMAIL']) ? $contactData['EMAIL'] : array($contactData['EMAIL'])) as $email)
 			{
+				if (ctype_space($email) || empty($email)) continue;
 				$response = $this->request('GET', 'v2/json/contacts/list', array('query' => $email, 'limit_rows' => 1));
-				if(!empty($response->contacts[0])) 
+				if(!empty($response->contacts[0]))
 				{
 					$emailIds[] = $response->contacts[0]->id;
 					$responsibleUserID = $response->contacts[0]->responsible_user_id;
@@ -398,7 +449,8 @@ class AmoAPI
 				}
 			}
 		}
-		
+
+		// Here we will find intersect of those 2 sets
 		$intersectId = -1;
 		if (!empty($contactData['EMAIL']) and !empty($emailIds))
 		{
@@ -408,9 +460,12 @@ class AmoAPI
 		{
 			$intersectId = $phoneIds[0];
 		}
-		
-		if($intersectId != -1) 
+
+		// If some duplicate was found
+		if($intersectId != -1)
 		{
+			// Do we need to add phone and email to contact?
+			// Or we have them in the contact already
 			$isNewPhone = true;
 			$isNewEmail = true;
 			foreach ($cacheContactData as $field)
@@ -421,21 +476,24 @@ class AmoAPI
 					{
 						if ($phone == $val->value) $isNewPhone = false;
 					}
-					
+
 					foreach ((is_array($contactData['EMAIL']) ? $contactData['EMAIL'] : array($contactData['EMAIL'])) as $email)
 					{
 						if ($email == $val->value) $isNewEmail = false;
 					}
 				}
 			}
-			
+			if (empty($contactData['EMAIL'])) $isNewEmail = false;
+			if (empty($contactData['PHONE'])) $isNewPhone = false;
+			// Here we add email and phone to contact data
+			// If it's needed
 			foreach ($cacheContactData as $field)
 			{
 				if ($field->code == 'EMAIL' and $isNewEmail)
 				{
-					$values = $this->processContactFields(array('EMAIL' => $contactData['EMAIL']));//[0]['values'];
+					$values = $this->processFields(array('EMAIL' => $contactData['EMAIL']), self::CONTACT_DATA_TYPE);//[0]['values'];
 					$values = $values[0]['values'];
-					foreach ($values as $value) 
+					foreach ($values as $value)
 					{
 						$value['enum'] = self::WORK_EMAIL_ID;
 						$field->values[] = (object)$value;
@@ -443,27 +501,35 @@ class AmoAPI
 				}
 				if ($field->code == 'PHONE' and $isNewPhone)
 				{
-					$values = $this->processContactFields(array('PHONE' => $contactData['PHONE']));//[0]['values'];
+					$values = $this->processFields(array('PHONE' => $contactData['PHONE']), self::CONTACT_DATA_TYPE);//[0]['values'];
 					$values = $values[0]['values'];
-					foreach ($values as $value) 
+					foreach ($values as $value)
 					{
 						$value['enum'] = self::WORK_PHONE_ID;
 						$field->values[] = (object)$value;
 					}
 				}
 			}
-			
-			// Update Contact
+
+			// Update Contact using our new data
 			$contact = array('custom_fields' => $cacheContactData, 'id' => $intersectId, 'last_modified' => time());
 			$updateRequest = array('request' => array('contacts' => array('update' => array($contact))));
 			$response = $this->request('POST','v2/json/contacts/set', $updateRequest);
 			if(!isset($response->contacts->update[0]->id)) throw new AmoException(-8);
-			
+
+			// Here we will check all linked leads to be in
+			// Closed status
 			$leadId = -1;
+			$pipe = $this->main_pipeline;
+			$status = $this->main_status;
+
 			if (!empty($linkedLeads))
 			{
+				$pipe = $this->rep_pipeline;
+				$status = $this->rep_status;
+				
 				$response = $this->request('GET', 'v2/json/leads/list', array('id' => $linkedLeads, 'limit_rows' => 1));
-				foreach ($response->leads as $lead) 
+				foreach ($response->leads as $lead)
 				{
 					if ($lead->date_close == 0)
 					{
@@ -472,53 +538,62 @@ class AmoAPI
 					}
 				}
 			}
-			
+
+			// If they all are closed, we will add new lead
 			if($leadId == -1)
 			{
-				$leadId = $this->leadRequest($responsibleUserID, $leadData['NAME'], self::REP_STATUS, self::REP_PIPELINE, $this->processLeadFields($leadData), $leadTags);
-				
+				$leadId = $this->leadRequest($responsibleUserID, $leadData['NAME'], $status, 
+					$pipe, $this->processFields($leadData, LEAD_DATA_TYPE), $leadTags);
+
 				$linkedLeads[] = $leadId;
 				$contact = array('linked_leads_id' => $linkedLeads, 'id' => $intersectId, 'last_modified' => time());
 				$updateRequest = array('request' => array('contacts' => array('update' => array($contact))));
 				$response = $this->request('POST','v2/json/contacts/set', $updateRequest);
 				if(!isset($response->contacts->update[0]->id)) throw new AmoException(-8);
 			}
-			else 
+			// Else we will generate task if needed
+			else
 			{
-				if ($generateTaskForRec)
+				if ($this->generateTaskForRec)
 				{
-					$this->generateTask($responsibleUserID, $leadId, 2, 1, 'Клиент оставил заявку повторно. Связаться', strtotime("+15 minutes"));
+					$this->generateTask($responsibleUserID, $leadId, 2, 1,
+						'Клиент оставил заявку повторно. Связаться', strtotime("+15 minutes"));
 				}
 			}
 		}
+		// If this is new contact
 		else
 		{
-			// Responsible user
-			if ($respUserSend == -1)
+			// This mean we have to rotate user
+			if ($respUserSend < 0)
 			{
 				$responsibleUser = $this->rotateUser();
+				$responsibleUserID = $responsibleUser->id;
 			}
+			// This mean we will use one that was sended
 			else
 			{
-				$responsibleUser = $respUserSend;
+				$responsibleUserID = $respUserSend;
 			}
-	
+
 			// Leads Request
-			$leadId = $this->leadRequest($responsibleUser->id, $leadData['NAME'], 1, 1, $this->processLeadFields($leadData), $leadTags);
-	
+			$leadId = $this->leadRequest($responsibleUserID, $leadData['NAME'], $this->main_status, $this->main_pipeline,
+				$this->processFields($leadData, self::LEAD_DATA_TYPE), $leadTags);
+
 			// Contacts Request
-			$contactId = $this->contactRequest($responsibleUser->id, (empty($contactData['NAME']) ? 'Untitled' : $contactData['NAME']),
-				$this->processContactFields($contactData), array($leadId));
+			$contactId = $this->contactRequest($responsibleUserID, (empty($contactData['NAME']) ? 'Untitled' : $contactData['NAME']),
+				$this->processFields($contactData, self::CONTACT_DATA_TYPE), array($leadId));
 		}
+		// We will return lead Id in any case
 		return $leadId;
 	}
-	
-	
+
+
 	public function addResourceToContactByEmail($email, $resource)
 	{
 		$response = $this->request('GET', 'v2/json/contacts/list', array('query' => $email, 'limit_rows' => 1));
 		$emailId = $response->contacts[0]->id;
-		
+
 		$res = array(
 			'element_id' => $emailId,
 			'element_type' => 1,
@@ -529,7 +604,7 @@ class AmoAPI
 		$response = $this->request('POST','v2/json/notes/set', $resRequest);
 		if(!isset($response->notes->add[0]->id)) throw new AmoException(-8);
 	}
-	
+
 	public function addResourceToLeadById($leadId, $resource)
 	{
 		$res = array(
@@ -542,49 +617,63 @@ class AmoAPI
 		$response = $this->request('POST','v2/json/notes/set', $resRequest);
 		if(!isset($response->notes->add[0]->id)) throw new AmoException(-8);
 	}
-	
+
 	public function getContactByLead($leadID)
 	{
 		$response = $this->request('GET', 'v2/json/contacts/links', array('deals_link' => array($leadID), 'limit_rows' => 1));
-		if(!empty($response->links)) 
+		if(!empty($response->links))
 		{
-			$contactID = $response->links[0]->contact_id;	
+			$contactID = $response->links[0]->contact_id;
 			$contact = $this->request('GET', 'v2/json/contacts/list', array('id' => $contactID));
-			
+
 			return $contact;
 		}
 		else {
 			return null;
 		}
-	
+
 	}
-	
+
 	public function getLeadByID($leadID)
 	{
 		$lead = $this->request('GET', 'v2/json/leads/list', array('id' => $leadID));
-		
+
 		if(empty($lead->leads))
 		{
 			throw new AmoException(-8);
 		}
 		return $lead;
 	}
-	
+
 	public function getAccountData()
 	{
 		return $this->request('GET', 'v2/json/accounts/current');
 	}
-	
+
 	public function setGenerateTasksForRec($generate)
 	{
-		if ($generate) 
+		if ($generate)
 		{
 			$this->generateTaskForRec = true;
 		}
 		else
 		{
-			$this->generateTaskForRec = false;	
+			$this->generateTaskForRec = false;
 		}
+	}
+	public function setMainPipeline($pipe, $status)
+	{
+		$this->main_pipeline = $pipe;
+		$this->main_status = $status;
+	}
+	public function setRepPipeline($pipe, $status)
+	{
+		$this->rep_pipeline = $pipe;
+		$this->rep_status = $status;
+	}
+	public function setDepartmentID($newID)
+	{
+		$this->departmentID = $newID;
 	}
 }
 ?>
