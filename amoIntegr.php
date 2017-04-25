@@ -51,6 +51,8 @@ class AmoAPI
 	private $rep_pipeline = 504622;
 	private $rep_status = 14107147;
 	private $departmentID = 0;
+	
+	const SUCCES_STATUS_ID = 142;
 
 	const WORK_PHONE_ID = 15030;
 	const WORK_EMAIL_ID = 15042;
@@ -419,7 +421,7 @@ class AmoAPI
 			foreach((is_array($contactData['PHONE']) ? $contactData['PHONE'] : array($contactData['PHONE'])) as $phone)
 			{
 				if (ctype_space($phone) || empty($phone)) continue;
-				$response = $this->request('GET', 'v2/json/contacts/list', array('query' => $phone, 'limit_rows' => 1));
+				$response = $this->request('GET', 'v2/json/contacts/list', array('query' => substr($phone, -7), 'limit_rows' => 1));
 				if(!empty($response->contacts[0]))
 				{
 					$phoneIds[] = $response->contacts[0]->id;
@@ -551,12 +553,14 @@ class AmoAPI
 
 			if (!empty($linkedLeads))
 			{
-				$pipe = $this->rep_pipeline;
-				$status = $this->rep_status;
-				
 				$response = $this->request('GET', 'v2/json/leads/list', array('id' => $linkedLeads, 'limit_rows' => 1));
 				foreach ($response->leads as $lead)
 				{
+					if ($lead->status_id == self::SUCCES_STATUS_ID)
+					{
+						$pipe = $this->rep_pipeline;
+						$status = $this->rep_status;
+					}
 					if ($lead->date_close == 0)
 					{
 						$leadId = $lead->id;
