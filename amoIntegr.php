@@ -519,7 +519,7 @@ class AmoAPI
 				}
 			}
 			
-			if ($noEmailInContact)
+			if ($noEmailInContact && !empty($contactData['EMAIL']))
 			{
 				$values = $this->processFields(array('EMAIL' => $contactData['EMAIL']), self::CONTACT_DATA_TYPE);//[0]['values'];
 				$values[0]['values'][0]['enum'] = self::WORK_EMAIL_ID;
@@ -529,7 +529,7 @@ class AmoAPI
 				$cacheContactData[] = $values;
 			}
 			
-			if ($noPhoneInContact)
+			if ($noPhoneInContact && !empty($contactData['PHONE']))
 			{
 				$values = $this->processFields(array('PHONE' => $contactData['PHONE']), self::CONTACT_DATA_TYPE);//[0]['values'];
 				$values[0]['values'][0]['enum'] = self::WORK_PHONE_ID;
